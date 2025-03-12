@@ -3,11 +3,29 @@ const { execSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8080;
 
 // Configuration
 const UUID = process.env.UUID || "de04add9-5c68-8bab-950c-08cd5320df18"; // Default UUID
 const WSPATH = process.env.WSPATH || "/"; // WebSocket path
+
+// Install necessary dependencies
+function installDependencies() {
+  try {
+    console.log("Installing necessary dependencies...");
+    execSync("apt-get update && apt-get install -y unzip curl wget", { stdio: 'inherit' });
+    console.log("Dependencies installed successfully");
+  } catch (error) {
+    console.log("Could not install dependencies with apt-get, trying with apk...");
+    try {
+      execSync("apk add --no-cache unzip curl wget", { stdio: 'inherit' });
+      console.log("Dependencies installed successfully with apk");
+    } catch (innerError) {
+      console.error("Failed to install dependencies:", innerError.message);
+      console.log("Continuing without installing dependencies...");
+    }
+  }
+}
 
 // Initialize V2Ray
 function initV2Ray() {
@@ -24,7 +42,7 @@ function initV2Ray() {
       },
       inbounds: [
         {
-          port: process.env.PORT || 3000,  // Use the PORT provided by Railway
+          port: port,  // Use the PORT provided by Railway
           protocol: "vmess",
           settings: {
             clients: [
@@ -53,8 +71,13 @@ function initV2Ray() {
     console.log("V2Ray configuration generated successfully");
 
     // Start V2Ray in the background
-    execSync("./v2ray run -c ./config/config.json &");
-    console.log("V2Ray started successfully");
+    try {
+      execSync("./v2ray run -c ./config/config.json &");
+      console.log("V2Ray started successfully");
+    } catch (error) {
+      console.error("Error starting V2Ray:", error.message);
+      console.log("Continuing without starting V2Ray...");
+    }
   } catch (error) {
     console.error("Error initializing V2Ray:", error);
   }
@@ -65,11 +88,70 @@ function setupV2Ray() {
   try {
     if (!fs.existsSync("./v2ray")) {
       console.log("Downloading V2Ray...");
-      // Download the latest V2Ray release for Linux
-      execSync("curl -L -o v2ray.zip https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-linux-64.zip");
-      execSync("unzip v2ray.zip");
+      
+      // Try multiple methods to download and extract V2Ray
+      try {
+        // Method 1: Using curl and unzip
+        execSync("curl -L -o v2ray.zip https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-linux-64.zip");
+        execSync("unzip v2ray.zip");
+      } catch (error) {
+        console.log("Error with curl and unzip method:", error.message);
+        
+        // Method 2: Using wget and unzip
+        try {
+          execSync("wget -O v2ray.zip https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-linux-64.zip");
+          execSync("unzip v2ray.zip");
+        } catch (error2) {
+          console.log("Error with wget and unzip method:", error2.message);
+          
+          // Method 3: Using Node.js to download and extract
+          console.log("Trying Node.js method to download and extract...");
+          
+          // Create a simple script to download and extract
+          const extractScript = `
+          const https = require('https');
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+          
+          const file = fs.createWriteStream('v2ray.zip');
+          https.get('https://github.com/v2fly/v2ray-core/releases/download/v4.45.2/v2ray-linux-64.zip', function(response) {
+            response.pipe(file);
+            file.on('finish', function() {
+              file.close(() => {
+                console.log('Download completed');
+                
+                // Extract using Node.js
+                const AdmZip = require('adm-zip');
+                const zip = new AdmZip('v2ray.zip');
+                zip.extractAllTo('./', true);
+                console.log('Extraction completed');
+                
+                // Make v2ray executable
+                execSync('chmod +x ./v2ray');
+              });
+            });
+          });
+          `;
+          
+          // Install adm-zip for extraction
+          execSync("npm install adm-zip");
+          
+          // Save and run the script
+          fs.writeFileSync('extract.js', extractScript);
+          execSync('node extract.js');
+        }
+      }
+      
+      // Make v2ray executable
       execSync("chmod +x ./v2ray");
-      execSync("rm v2ray.zip");
+      
+      // Clean up
+      try {
+        execSync("rm v2ray.zip");
+      } catch (error) {
+        console.log("Could not remove zip file:", error.message);
+      }
+      
       console.log("V2Ray downloaded and set up successfully");
     } else {
       console.log("V2Ray is already set up");
@@ -83,7 +165,9 @@ function setupV2Ray() {
 function generateVMessLink() {
   try {
     // Get the Railway service domain from the environment
-    const domain = process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN || "your-railway-app.up.railway.app";
+    const domain = process.env.RAILWAY_STATIC_URL || 
+                  process.env.RAILWAY_PUBLIC_DOMAIN || 
+                  "dazzling-inspiration.up.railway.app";  // Use your actual Railway domain
     
     // Create VMess configuration object
     const vmessConfig = {
@@ -115,6 +199,9 @@ function generateVMessLink() {
 
 // Express middleware
 app.use(express.static('public'));
+
+// Try to install dependencies first
+installDependencies();
 
 // Setup and start V2Ray
 setupV2Ray();

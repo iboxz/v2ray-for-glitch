@@ -10,7 +10,8 @@
     "node": "18.x"
   },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "adm-zip": "^0.5.10"
   },
   "repository": {
     "type": "git",
