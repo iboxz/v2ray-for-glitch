@@ -24,7 +24,7 @@ function initV2Ray() {
       },
       inbounds: [
         {
-          port: 8080,
+          port: process.env.PORT || 3000,  // Use the PORT provided by Railway
           protocol: "vmess",
           settings: {
             clients: [
@@ -52,7 +52,7 @@ function initV2Ray() {
     fs.writeFileSync("./config/config.json", JSON.stringify(config, null, 2));
     console.log("V2Ray configuration generated successfully");
 
-    // Start V2Ray
+    // Start V2Ray in the background
     execSync("./v2ray run -c ./config/config.json &");
     console.log("V2Ray started successfully");
   } catch (error) {
@@ -65,6 +65,7 @@ function setupV2Ray() {
   try {
     if (!fs.existsSync("./v2ray")) {
       console.log("Downloading V2Ray...");
+      // Download the latest V2Ray release for Linux
       execSync("curl -L -o v2ray.zip https://github.com/v2fly/v2ray-core/releases/latest/download/v2ray-linux-64.zip");
       execSync("unzip v2ray.zip");
       execSync("chmod +x ./v2ray");
@@ -81,20 +82,20 @@ function setupV2Ray() {
 // Generate VMess configuration link
 function generateVMessLink() {
   try {
-    // Get the Glitch project name from the environment
-    const projectName = process.env.PROJECT_DOMAIN || "your-project-name";
+    // Get the Railway service domain from the environment
+    const domain = process.env.RAILWAY_STATIC_URL || process.env.RAILWAY_PUBLIC_DOMAIN || "your-railway-app.up.railway.app";
     
     // Create VMess configuration object
     const vmessConfig = {
       v: "2",
-      ps: `Glitch-V2Ray-${projectName}`,
-      add: `${projectName}.glitch.me`,
+      ps: `Railway-V2Ray`,
+      add: domain,
       port: "443",
       id: UUID,
       aid: "0",
       net: "ws",
       type: "none",
-      host: `${projectName}.glitch.me`,
+      host: domain,
       path: WSPATH,
       tls: "tls"
     };
@@ -112,22 +113,56 @@ function generateVMessLink() {
   }
 }
 
+// Express middleware
+app.use(express.static('public'));
+
 // Setup and start V2Ray
 setupV2Ray();
 initV2Ray();
 
 // Web server routes
 app.get("/", (req, res) => {
-  res.send("Server is running");
+  res.send(`
+    <html>
+      <head>
+        <title>V2Ray Server</title>
+        <style>
+          body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+          pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+          .container { border: 1px solid #ddd; padding: 20px; border-radius: 5px; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <h1>V2Ray Server is Running</h1>
+        <p>Your V2Ray server is up and running on Railway.</p>
+        <p><a href="/config">View Configuration</a> | <a href="/status">Check Status</a></p>
+      </body>
+    </html>
+  `);
 });
 
 // Status endpoint
 app.get("/status", (req, res) => {
   try {
     const status = execSync("ps aux | grep v2ray").toString();
-    res.send(`<pre>${status}</pre>`);
+    res.send(`
+      <html>
+        <head>
+          <title>V2Ray Status</title>
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+            pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+          </style>
+        </head>
+        <body>
+          <h1>V2Ray Status</h1>
+          <pre>${status}</pre>
+          <p><a href="/">Back to Home</a></p>
+        </body>
+      </html>
+    `);
   } catch (error) {
-    res.status(500).send("Error checking status");
+    res.status(500).send("Error checking status: " + error.message);
   }
 });
 
@@ -136,13 +171,37 @@ app.get("/config", (req, res) => {
   const configInfo = generateVMessLink();
   if (configInfo) {
     res.send(`
-      <h1>V2Ray Configuration</h1>
-      <p>Scan this QR code with your V2Ray client:</p>
-      <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(configInfo.vmessLink)}" />
-      <p>Or use this VMess link:</p>
-      <code>${configInfo.vmessLink}</code>
-      <h2>Manual Configuration:</h2>
-      <pre>${JSON.stringify(configInfo.config, null, 2)}</pre>
+      <html>
+        <head>
+          <title>V2Ray Configuration</title>
+          <style>
+            body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+            pre { background: #f4f4f4; padding: 10px; border-radius: 5px; overflow-x: auto; }
+            .config-box { border: 1px solid #ddd; padding: 15px; margin: 15px 0; border-radius: 5px; }
+            .qr-code { text-align: center; margin: 20px 0; }
+          </style>
+        </head>
+        <body>
+          <h1>V2Ray Configuration</h1>
+          
+          <div class="config-box">
+            <h2>VMess Link</h2>
+            <p>Scan this QR code with your V2Ray client:</p>
+            <div class="qr-code">
+              <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(configInfo.vmessLink)}" />
+            </div>
+            <p>Or use this VMess link:</p>
+            <pre>${configInfo.vmessLink}</pre>
+          </div>
+          
+          <div class="config-box">
+            <h2>Manual Configuration</h2>
+            <pre>${JSON.stringify(configInfo.config, null, 2)}</pre>
+          </div>
+          
+          <p><a href="/">Back to Home</a></p>
+        </body>
+      </html>
     `);
   } else {
     res.status(500).send("Error generating configuration");
